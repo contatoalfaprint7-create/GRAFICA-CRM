@@ -1,0 +1,913 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>CRM Gráfica</title>
+
+<!-- ══════════════════════════════════════════════
+     FIREBASE — banco de dados gratuito e em tempo real
+     Substitua os valores abaixo após criar seu projeto
+     no Firebase Console (passo 2 do guia)
+════════════════════════════════════════════════ -->
+<script type="module">
+  import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.0/firebase-app.js";
+  import { getDatabase, ref, onValue, push, set, remove, update }
+    from "https://www.gstatic.com/firebasejs/10.12.0/firebase-database.js";
+
+  // ★ SUBSTITUA AQUI com os dados do seu Firebase ★
+  const firebaseConfig = {
+    apiKey:            "COLE_AQUI_SUA_API_KEY",
+    authDomain:        "COLE_AQUI.firebaseapp.com",
+    databaseURL:       "https://COLE_AQUI-default-rtdb.firebaseio.com",
+    projectId:         "COLE_AQUI",
+    storageBucket:     "COLE_AQUI.appspot.com",
+    messagingSenderId: "COLE_AQUI",
+    appId:             "COLE_AQUI"
+  };
+
+  const app = initializeApp(firebaseConfig);
+  const db  = getDatabase(app);
+
+  // Expõe para o resto da página
+  window._db     = db;
+  window._ref    = ref;
+  window._onValue= onValue;
+  window._push   = push;
+  window._set    = set;
+  window._remove = remove;
+  window._update = update;
+  window._firebaseReady = true;
+  document.dispatchEvent(new Event("firebase-ready"));
+</script>
+
+<style>
+/* ── Reset & base ─────────────────────────────── */
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Segoe UI', system-ui, sans-serif;
+  background: #F8F7F4;
+  color: #1C1917;
+  min-height: 100vh;
+}
+button { font-family: inherit; cursor: pointer; }
+input, select, textarea { font-family: inherit; }
+
+/* ── Utilitários ──────────────────────────────── */
+.hidden  { display: none !important; }
+.spinner {
+  width: 36px; height: 36px;
+  border: 4px solid #E7E5E4;
+  border-top-color: #F59E0B;
+  border-radius: 50%;
+  animation: spin .7s linear infinite;
+  margin: 60px auto 12px;
+}
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.toast {
+  position: fixed; bottom: 80px; left: 50%; transform: translateX(-50%);
+  background: #1C1917; color: #fff;
+  padding: 10px 22px; border-radius: 20px;
+  font-size: 13px; font-weight: 600; z-index: 999;
+  white-space: nowrap; box-shadow: 0 4px 20px rgba(0,0,0,.3);
+  animation: fadeIn .2s ease;
+}
+@keyframes fadeIn { from { opacity:0; transform: translateX(-50%) translateY(8px); } }
+
+/* ── Header ───────────────────────────────────── */
+#header {
+  background: #1C1917;
+  padding: 14px 18px 12px;
+  position: sticky; top: 0; z-index: 100;
+}
+.header-row {
+  display: flex; justify-content: space-between;
+  align-items: center; margin-bottom: 12px;
+}
+.header-title-tag { color: #A8A29E; font-size: 10px; letter-spacing: 1.5px; }
+.header-title     { color: #fff; font-weight: 800; font-size: 22px; }
+.btn-novo {
+  background: #F59E0B; color: #1C1917;
+  border: none; border-radius: 10px;
+  padding: 9px 18px; font-weight: 700; font-size: 14px;
+}
+.btn-atualizar {
+  background: #292524; color: #A8A29E;
+  border: none; border-radius: 8px;
+  padding: 9px 11px; font-size: 16px; margin-right: 6px;
+}
+
+/* Stats */
+.stats-grid {
+  display: grid; grid-template-columns: repeat(4,1fr);
+  gap: 8px; margin-bottom: 12px;
+}
+.stat-card {
+  background: #292524; border-radius: 8px;
+  padding: 8px 4px; text-align: center;
+}
+.stat-val   { font-weight: 800; font-size: 20px; }
+.stat-label { color: #78716C; font-size: 10px; }
+
+/* Busca */
+#busca {
+  width: 100%; padding: 9px 12px; border-radius: 8px;
+  border: none; font-size: 13px;
+  background: #292524; color: #fff;
+}
+#busca::placeholder { color: #57534E; }
+
+/* ── Filtros ──────────────────────────────────── */
+#filtros {
+  overflow-x: auto; white-space: nowrap;
+  padding: 10px 16px;
+  background: #fff; border-bottom: 1px solid #E7E5E4;
+}
+.filtro-btn {
+  display: inline-block; margin-right: 6px;
+  padding: 6px 12px; border-radius: 20px;
+  border: 1.5px solid #E7E5E4;
+  background: #fff; color: #78716C;
+  font-weight: 600; font-size: 12px;
+  white-space: nowrap;
+}
+.filtro-btn.ativo { color: #fff; border-color: transparent; }
+
+/* ── Lista de pedidos ─────────────────────────── */
+#lista { padding: 12px 16px 100px; }
+
+.card {
+  background: #fff; border-radius: 12px;
+  padding: 14px 16px 14px 20px;
+  margin-bottom: 10px;
+  border: 1.5px solid #E7E5E4;
+  position: relative; overflow: hidden;
+  cursor: pointer; transition: box-shadow .15s;
+}
+.card:hover { box-shadow: 0 2px 12px rgba(0,0,0,.08); }
+.card.atrasado { border-color: #FCA5A5; }
+.card-barra {
+  position: absolute; left: 0; top: 0; bottom: 0;
+  width: 4px; border-radius: 12px 0 0 12px;
+}
+.card-top {
+  display: flex; justify-content: space-between;
+  align-items: flex-start; margin-bottom: 8px;
+}
+.card-nome    { font-weight: 700; font-size: 15px; }
+.card-produto { font-size: 12px; color: #78716C; margin-top: 2px; }
+.card-id      { font-size: 11px; color: #A8A29E; text-align: right; }
+.card-valor   { font-size: 13px; font-weight: 700; color: #10B981; }
+.card-bottom  { display: flex; justify-content: space-between; align-items: center; }
+.badge-etapa  {
+  font-size: 11px; font-weight: 700;
+  padding: 3px 8px; border-radius: 20px;
+}
+.card-meta { display: flex; gap: 8px; align-items: center; font-size: 11px; color: #78716C; }
+.mini-progress {
+  display: flex; gap: 2px; margin-top: 8px;
+}
+.mini-bar { flex: 1; height: 3px; border-radius: 2px; background: #E7E5E4; }
+
+/* ── Detalhe ──────────────────────────────────── */
+#tela-detalhe { display: none; }
+#tela-detalhe.ativa { display: block; }
+
+.detalhe-header {
+  background: #1C1917; padding: 14px 18px;
+  display: flex; justify-content: space-between; align-items: center;
+}
+.btn-voltar {
+  background: none; border: none;
+  color: #A8A29E; font-size: 22px; padding: 0;
+}
+.btn-editar {
+  background: #292524; border: none;
+  color: #D6D3D1; border-radius: 8px;
+  padding: 6px 12px; font-size: 12px;
+}
+.progresso-wrap { background: #fff; padding: 16px 18px; border-bottom: 1px solid #E7E5E4; }
+.progresso-barras { display: flex; gap: 4px; margin-bottom: 10px; }
+.prog-bar { flex: 1; height: 6px; border-radius: 4px; background: #E7E5E4; transition: background .3s; }
+.progresso-info { display: flex; justify-content: space-between; align-items: center; }
+
+.detalhe-body { padding: 16px 18px; }
+.info-card {
+  background: #fff; border-radius: 12px;
+  padding: 16px; margin-bottom: 12px;
+  border: 1px solid #E7E5E4;
+}
+.info-row {
+  display: flex; justify-content: space-between;
+  padding: 7px 0; border-bottom: 1px solid #F5F5F4;
+  font-size: 13px;
+}
+.info-row:last-child { border-bottom: none; }
+.info-label { color: #78716C; }
+.info-val   { font-weight: 600; max-width: 60%; text-align: right; }
+
+.btn-wpp {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 14px; background: #25D366;
+  color: #fff; border-radius: 8px;
+  text-decoration: none; font-weight: 600;
+  font-size: 13px; margin-top: 12px; border: none;
+  width: 100%;
+}
+
+.acoes-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.btn-voltar-etapa {
+  padding: 12px; border-radius: 10px;
+  border: 1.5px solid #E7E5E4; background: #fff;
+  color: #57534E; font-weight: 600; font-size: 13px;
+}
+.btn-avancar {
+  padding: 12px; border-radius: 10px;
+  border: none; color: #fff;
+  font-weight: 700; font-size: 13px;
+}
+
+.historico-card {
+  background: #fff; border-radius: 12px;
+  padding: 16px; border: 1px solid #E7E5E4; margin-bottom: 12px;
+}
+.historico-title { font-size: 12px; font-weight: 700; color: #78716C; margin-bottom: 10px; }
+.hist-item { display: flex; gap: 10px; margin-bottom: 8px; }
+.hist-dot  { width: 8px; height: 8px; border-radius: 50%; background: #10B981; margin-top: 4px; flex-shrink: 0; }
+.hist-texto { font-size: 13px; color: #292524; }
+.hist-data  { font-size: 11px; color: #A8A29E; }
+
+.btn-excluir {
+  width: 100%; padding: 12px; background: none;
+  border: 1.5px solid #FCA5A5; color: #EF4444;
+  border-radius: 10px; font-weight: 600; font-size: 13px;
+}
+
+/* ── Formulário ───────────────────────────────── */
+#tela-form { display: none; }
+#tela-form.ativa { display: block; }
+
+.form-header {
+  background: #1C1917; padding: 14px 18px;
+  display: flex; align-items: center; gap: 12px;
+}
+.form-header-title { color: #fff; font-weight: 700; font-size: 16px; }
+
+.form-body { padding: 20px 16px 100px; max-width: 480px; margin: 0 auto; }
+.campo-label {
+  font-size: 12px; color: #78716C; font-weight: 600;
+  display: block; margin-bottom: 4px;
+}
+.campo-input, .campo-select, .campo-textarea {
+  width: 100%; padding: 10px 12px; border-radius: 8px;
+  border: 1.5px solid #E7E5E4; font-size: 14px;
+  background: #fff; margin-bottom: 16px;
+}
+.campo-textarea { resize: vertical; }
+.campo-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+
+.prioridade-grid { display: flex; gap: 8px; margin-bottom: 16px; }
+.prio-btn {
+  flex: 1; padding: 8px 4px; border-radius: 8px;
+  border: 2px solid #E7E5E4; background: #fff;
+  color: #78716C; font-weight: 600; font-size: 12px;
+}
+.prio-btn.ativo { color: #fff; }
+
+.btn-salvar {
+  width: 100%; padding: 14px; background: #1C1917;
+  color: #fff; border: none; border-radius: 10px;
+  font-weight: 700; font-size: 16px; margin-top: 8px;
+}
+.btn-salvar:disabled { background: #A8A29E; cursor: not-allowed; }
+
+/* ── Rodapé ───────────────────────────────────── */
+.rodape {
+  position: fixed; bottom: 0; left: 0; right: 0;
+  background: #fff; border-top: 1px solid #E7E5E4;
+  padding: 8px 16px 14px;
+  display: flex; justify-content: center; align-items: center; gap: 6px;
+}
+.online-dot { width: 8px; height: 8px; border-radius: 50%; background: #10B981; }
+.rodape-texto { font-size: 11px; color: #78716C; }
+
+/* ── Vazio ────────────────────────────────────── */
+.vazio { text-align: center; padding: 60px 20px; color: #A8A29E; }
+.vazio-icon  { font-size: 40px; margin-bottom: 12px; }
+.vazio-titulo{ font-weight: 600; margin-bottom: 4px; color: #57534E; }
+.vazio-sub   { font-size: 13px; }
+
+/* ── Config Firebase ──────────────────────────── */
+#tela-config { display: none; }
+#tela-config.ativa { display: block; }
+.config-body { padding: 24px 18px; max-width: 500px; margin: 0 auto; }
+.config-passo {
+  background: #fff; border-radius: 12px;
+  padding: 18px; margin-bottom: 14px;
+  border: 1.5px solid #E7E5E4;
+}
+.config-passo-num {
+  width: 32px; height: 32px; border-radius: 50%;
+  background: #F59E0B; color: #1C1917;
+  font-weight: 800; font-size: 14px;
+  display: flex; align-items: center; justify-content: center;
+  margin-bottom: 10px;
+}
+.config-passo h3 { font-size: 15px; margin-bottom: 6px; }
+.config-passo p  { font-size: 13px; color: #57534E; line-height: 1.6; margin-bottom: 8px; }
+.config-passo a  { color: #3B82F6; font-weight: 600; }
+.config-code {
+  background: #F5F5F4; border-radius: 8px;
+  padding: 10px 12px; font-family: monospace;
+  font-size: 12px; color: #292524;
+  border-left: 3px solid #F59E0B;
+  margin: 8px 0; word-break: break-all;
+}
+</style>
+</head>
+<body>
+
+<!-- ════════════════════════════════════════════
+     TELA PRINCIPAL — Lista de pedidos
+═════════════════════════════════════════════ -->
+<div id="tela-lista">
+  <div id="header">
+    <div class="header-row">
+      <div>
+        <div class="header-title-tag">GRÁFICA</div>
+        <div class="header-title">Pedidos</div>
+      </div>
+      <div style="display:flex;align-items:center">
+        <button class="btn-atualizar" onclick="carregar()" title="Atualizar">🔄</button>
+        <button class="btn-novo" onclick="abrirNovo()">+ Novo</button>
+      </div>
+    </div>
+
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-val" id="stat-total" style="color:#A8A29E">0</div>
+        <div class="stat-label">Total</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="stat-ativos" style="color:#60A5FA">0</div>
+        <div class="stat-label">Ativos</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="stat-atrasados" style="color:#F87171">0</div>
+        <div class="stat-label">Atrasados</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-val" id="stat-hoje" style="color:#34D399">0</div>
+        <div class="stat-label">Hoje</div>
+      </div>
+    </div>
+
+    <input id="busca" placeholder="Buscar cliente, produto ou nº..." oninput="renderLista()">
+  </div>
+
+  <div id="filtros"></div>
+  <div id="lista"><div class="spinner"></div></div>
+
+  <div class="rodape">
+    <div class="online-dot"></div>
+    <span class="rodape-texto">Sincronizado em tempo real em todos os computadores</span>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     TELA DETALHE
+═════════════════════════════════════════════ -->
+<div id="tela-detalhe">
+  <div class="detalhe-header">
+    <div style="display:flex;align-items:center;gap:12px">
+      <button class="btn-voltar" onclick="voltar()">←</button>
+      <div>
+        <div id="det-id"     style="color:#A8A29E;font-size:11px"></div>
+        <div id="det-nome"   style="color:#fff;font-weight:700;font-size:16px"></div>
+      </div>
+    </div>
+    <button class="btn-editar" onclick="abrirEdicao()">✏️ Editar</button>
+  </div>
+
+  <div class="progresso-wrap">
+    <div class="progresso-barras" id="prog-barras"></div>
+    <div class="progresso-info">
+      <span id="prog-etapa" style="font-size:14px;font-weight:700"></span>
+      <span id="prog-prazo" style="font-size:12px;font-weight:600"></span>
+    </div>
+  </div>
+
+  <div class="detalhe-body">
+    <div class="info-card" id="info-card"></div>
+
+    <div class="acoes-grid">
+      <button class="btn-voltar-etapa" id="btn-voltar-et" onclick="voltarEtapa()">← Voltar etapa</button>
+      <button class="btn-avancar"      id="btn-avancar"   onclick="avancarEtapa()">Avançar →</button>
+    </div>
+
+    <div class="historico-card hidden" id="historico-card">
+      <div class="historico-title">HISTÓRICO</div>
+      <div id="historico-lista"></div>
+    </div>
+
+    <button class="btn-excluir" onclick="excluirPedido()">🗑️ Excluir pedido</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     TELA FORMULÁRIO
+═════════════════════════════════════════════ -->
+<div id="tela-form">
+  <div class="form-header">
+    <button class="btn-voltar" onclick="voltar()">←</button>
+    <span class="form-header-title" id="form-titulo">Novo Pedido</span>
+  </div>
+  <div class="form-body">
+    <label class="campo-label">Cliente *</label>
+    <input class="campo-input" id="f-cliente" placeholder="Nome do cliente">
+
+    <label class="campo-label">WhatsApp</label>
+    <input class="campo-input" id="f-whatsapp" placeholder="(00) 00000-0000">
+
+    <label class="campo-label">Produto *</label>
+    <select class="campo-select" id="f-produto">
+      <option value="">Selecione...</option>
+      <option>Cartão de Visita</option><option>Flyer</option><option>Banner</option>
+      <option>Adesivo</option><option>Placa</option><option>Faixa</option>
+      <option>Folder</option><option>Cardápio</option><option>Envelope</option>
+      <option>Papel Timbrado</option><option>Lona</option><option>Outro</option>
+    </select>
+
+    <label class="campo-label">Descrição</label>
+    <textarea class="campo-textarea" id="f-descricao" rows="3"
+      placeholder="Detalhes, formato, cores, observações..."></textarea>
+
+    <div class="campo-grid">
+      <div>
+        <label class="campo-label">Quantidade</label>
+        <input class="campo-input" id="f-quantidade" placeholder="Ex: 1000 un.">
+      </div>
+      <div>
+        <label class="campo-label">Valor (R$)</label>
+        <input class="campo-input" id="f-valor" placeholder="Ex: 350,00">
+      </div>
+    </div>
+
+    <div class="campo-grid">
+      <div>
+        <label class="campo-label">Prazo de entrega</label>
+        <input class="campo-input" type="date" id="f-prazo">
+      </div>
+      <div>
+        <label class="campo-label">Responsável</label>
+        <select class="campo-select" id="f-responsavel" style="margin-bottom:0">
+          <option value="">Ninguém</option>
+          <option>Ana</option><option>Bruno</option><option>Carlos</option>
+          <option>Diana</option><option>Eduardo</option>
+        </select>
+      </div>
+    </div>
+
+    <label class="campo-label" style="margin-top:4px">Prioridade</label>
+    <div class="prioridade-grid" id="prio-grid">
+      <button class="prio-btn" data-prio="normal"   onclick="setPrio('normal')"   style="border-color:#6B7280">Normal</button>
+      <button class="prio-btn" data-prio="urgente"  onclick="setPrio('urgente')"  style="border-color:#E7E5E4">Urgente</button>
+      <button class="prio-btn" data-prio="expresso" onclick="setPrio('expresso')" style="border-color:#E7E5E4">Expresso</button>
+    </div>
+
+    <div id="campo-etapa" class="hidden">
+      <label class="campo-label">Etapa atual</label>
+      <select class="campo-select" id="f-etapa"></select>
+    </div>
+
+    <button class="btn-salvar" id="btn-salvar" onclick="salvarPedido()">Criar Pedido</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     TELA CONFIG FIREBASE
+═════════════════════════════════════════════ -->
+<div id="tela-config">
+  <div style="background:#1C1917;padding:14px 18px;display:flex;align-items:center;gap:12px">
+    <button class="btn-voltar" onclick="voltar()">←</button>
+    <span style="color:#fff;font-weight:700;font-size:16px">⚙️ Configurar Firebase</span>
+  </div>
+  <div class="config-body">
+    <div style="background:#FEF3C7;border-radius:10px;padding:14px;margin-bottom:16px;font-size:13px;color:#92400E">
+      ⚠️ O sistema precisa do Firebase configurado para funcionar. Siga os passos abaixo — leva cerca de 10 minutos.
+    </div>
+
+    <div class="config-passo">
+      <div class="config-passo-num">1</div>
+      <h3>Criar conta no Google Firebase</h3>
+      <p>Acesse <a href="https://console.firebase.google.com" target="_blank">console.firebase.google.com</a> e entre com sua conta Google.</p>
+      <p>Clique em <strong>"Criar projeto"</strong>, dê o nome <strong>grafica-crm</strong> e desative o Google Analytics (não precisa).</p>
+    </div>
+
+    <div class="config-passo">
+      <div class="config-passo-num">2</div>
+      <h3>Ativar o banco de dados</h3>
+      <p>No menu esquerdo clique em <strong>Realtime Database → Criar banco de dados</strong>.</p>
+      <p>Escolha a região <strong>us-central1</strong> e no modo de segurança selecione <strong>"Modo de teste"</strong> (pode mudar depois).</p>
+    </div>
+
+    <div class="config-passo">
+      <div class="config-passo-num">3</div>
+      <h3>Pegar as credenciais</h3>
+      <p>Vá em <strong>Configurações do projeto ⚙️ → Geral → Seus apps → Adicionar app → Web (&lt;/&gt;)</strong>.</p>
+      <p>Dê o nome <strong>grafica-crm</strong> e clique em <strong>Registrar app</strong>.</p>
+      <p>Vai aparecer um bloco de código. Copie os valores de <strong>apiKey, authDomain, databaseURL, projectId, storageBucket, messagingSenderId, appId</strong>.</p>
+    </div>
+
+    <div class="config-passo">
+      <div class="config-passo-num">4</div>
+      <h3>Colar no arquivo index.html</h3>
+      <p>Abra o arquivo <strong>index.html</strong> com o Bloco de Notas. Procure pelo trecho:</p>
+      <div class="config-code">apiKey: "COLE_AQUI_SUA_API_KEY"</div>
+      <p>Substitua cada <strong>COLE_AQUI...</strong> pelo valor correspondente que copiou do Firebase.</p>
+    </div>
+
+    <div class="config-passo">
+      <div class="config-passo-num">5</div>
+      <h3>Subir no Vercel (link gratuito)</h3>
+      <p>Acesse <a href="https://vercel.com" target="_blank">vercel.com</a> → crie conta com Google → clique em <strong>Add New → Project</strong>.</p>
+      <p>Arraste a pasta <strong>grafica-crm</strong> para a tela do Vercel. Clique em <strong>Deploy</strong>.</p>
+      <p>Em 1 minuto seu link estará pronto: <strong>grafica-crm.vercel.app</strong></p>
+      <p>Compartilhe esse link com toda a equipe — funciona em qualquer computador ou celular!</p>
+    </div>
+
+    <button class="btn-salvar" onclick="voltar()">← Voltar para os pedidos</button>
+  </div>
+</div>
+
+<!-- ════════════════════════════════════════════
+     JAVASCRIPT
+═════════════════════════════════════════════ -->
+<script>
+// ── Constantes ────────────────────────────────
+const ETAPAS = [
+  { id:"orcamento",  label:"Orçamento",        cor:"#6B7280", icon:"💬" },
+  { id:"pagamento",  label:"Pagamento",         cor:"#EC4899", icon:"💰" },
+  { id:"arte",       label:"Arte",              cor:"#8B5CF6", icon:"🎨" },
+  { id:"impressao",  label:"Impressão",         cor:"#3B82F6", icon:"🖨️" },
+  { id:"acabamento", label:"Acabamento",        cor:"#F59E0B", icon:"✂️" },
+  { id:"pronto",     label:"Pronto p/ Entrega", cor:"#10B981", icon:"✅" },
+  { id:"entregue",   label:"Entregue",          cor:"#1F2937", icon:"📦" },
+];
+const PRIO_CORES = { normal:"#6B7280", urgente:"#F59E0B", expresso:"#EF4444" };
+
+// ── Estado ─────────────────────────────────────
+let pedidos      = {};
+let pedidoAtual  = null;
+let telaAnterior = "tela-lista";
+let prioAtual    = "normal";
+let editandoId   = null;
+let firebaseOk   = false;
+
+// ── Firebase ───────────────────────────────────
+document.addEventListener("firebase-ready", () => {
+  firebaseOk = true;
+  carregar();
+});
+
+function carregar() {
+  if (!firebaseOk) { mostrarConfig(); return; }
+  const r = window._ref(window._db, "pedidos");
+  window._onValue(r, snap => {
+    pedidos = snap.val() || {};
+    renderFiltros();
+    renderLista();
+    atualizarStats();
+  });
+}
+
+// ── Navegação ──────────────────────────────────
+function mostrarTela(id) {
+  ["tela-lista","tela-detalhe","tela-form","tela-config"]
+    .forEach(t => document.getElementById(t).style.display = "none");
+  document.getElementById(id).style.display = "block";
+}
+function mostrarConfig() { mostrarTela("tela-config"); }
+function voltar()        { mostrarTela("tela-lista"); editandoId = null; }
+
+// ── Utilitários ────────────────────────────────
+function gerarId() { return "#" + (Math.floor(Math.random()*9000)+1000); }
+function etapaObj(id) { return ETAPAS.find(e => e.id === id) || ETAPAS[0]; }
+function formatarData(iso) {
+  if (!iso) return "—";
+  return new Date(iso+"T00:00:00").toLocaleDateString("pt-BR");
+}
+function diasRestantes(prazo) {
+  if (!prazo) return null;
+  const hoje = new Date(); hoje.setHours(0,0,0,0);
+  const p    = new Date(prazo+"T00:00:00");
+  return Math.ceil((p - hoje) / 86400000);
+}
+function toast(msg) {
+  const t = document.createElement("div");
+  t.className = "toast"; t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3000);
+}
+
+// ── Render filtros ─────────────────────────────
+let filtroAtivo = "todas";
+function renderFiltros() {
+  const wrap = document.getElementById("filtros");
+  const todos = [{ id:"todas", label:"Todas", cor:"#1C1917", icon:"📋" }, ...ETAPAS];
+  wrap.innerHTML = todos.map(e => {
+    const count = e.id === "todas" ? "" :
+      ` (${Object.values(pedidos).filter(p => p.etapa===e.id).length})`;
+    const ativo = filtroAtivo === e.id;
+    return `<button class="filtro-btn${ativo?" ativo":""}"
+      style="${ativo ? `background:${e.cor}` : ""}"
+      onclick="setFiltro('${e.id}')">${e.icon} ${e.label}${count}</button>`;
+  }).join("");
+}
+function setFiltro(id) { filtroAtivo = id; renderFiltros(); renderLista(); }
+
+// ── Render lista ───────────────────────────────
+function renderLista() {
+  const busca   = (document.getElementById("busca")?.value || "").toLowerCase();
+  const lista   = document.getElementById("lista");
+  const arr     = Object.entries(pedidos)
+    .map(([k,v]) => ({ ...v, _key:k }))
+    .sort((a,b) => (b.criadoEm||"").localeCompare(a.criadoEm||""));
+
+  const filtrados = arr.filter(p => {
+    const okEtapa = filtroAtivo === "todas" || p.etapa === filtroAtivo;
+    const okBusca = !busca ||
+      (p.cliente||"").toLowerCase().includes(busca) ||
+      (p.id||"").includes(busca) ||
+      (p.produto||"").toLowerCase().includes(busca);
+    return okEtapa && okBusca;
+  });
+
+  if (!filtrados.length) {
+    lista.innerHTML = `<div class="vazio">
+      <div class="vazio-icon">🖨️</div>
+      <div class="vazio-titulo">Nenhum pedido aqui</div>
+      <div class="vazio-sub">Crie um novo pedido para começar</div>
+    </div>`; return;
+  }
+
+  lista.innerHTML = filtrados.map(p => {
+    const etapa    = etapaObj(p.etapa);
+    const dias     = diasRestantes(p.prazo);
+    const atrasado = dias !== null && dias < 0 && p.etapa !== "entregue";
+    const idxAtual = ETAPAS.findIndex(e => e.id === p.etapa);
+
+    const prazoTxt = dias === null ? "" :
+      atrasado ? `⚠️ ${Math.abs(dias)}d atraso` :
+      dias === 0 ? "⏰ Hoje" : `📅 ${dias}d`;
+    const priorCor = PRIO_CORES[p.prioridade] || "#6B7280";
+
+    const miniBarras = ETAPAS.map((e,i) =>
+      `<div class="mini-bar" style="background:${i<=idxAtual?e.cor:"#E7E5E4"}"></div>`
+    ).join("");
+
+    return `<div class="card${atrasado?" atrasado":""}" onclick="abrirDetalhe('${p._key}')">
+      <div class="card-barra" style="background:${etapa.cor}"></div>
+      <div class="card-top">
+        <div>
+          <div class="card-nome">${p.cliente||"—"}</div>
+          <div class="card-produto">${p.produto||""}${p.quantidade?` · ${p.quantidade}`:""}</div>
+        </div>
+        <div>
+          <div class="card-id">${p.id||""}</div>
+          ${p.valor?`<div class="card-valor">R$ ${p.valor}</div>`:""}
+        </div>
+      </div>
+      <div class="card-bottom">
+        <span class="badge-etapa" style="color:${etapa.cor};background:${etapa.cor}18">
+          ${etapa.icon} ${etapa.label}
+        </span>
+        <div class="card-meta">
+          ${p.responsavel?`<span>👤 ${p.responsavel}</span>`:""}
+          ${prazoTxt?`<span style="color:${atrasado?"#EF4444":dias===0?"#F59E0B":"#78716C"}">${prazoTxt}</span>`:""}
+          ${p.prioridade&&p.prioridade!=="normal"?`<span style="color:${priorCor};font-weight:700">●</span>`:""}
+        </div>
+      </div>
+      <div class="mini-progress">${miniBarras}</div>
+    </div>`;
+  }).join("");
+}
+
+// ── Stats ──────────────────────────────────────
+function atualizarStats() {
+  const arr = Object.values(pedidos);
+  document.getElementById("stat-total").textContent     = arr.length;
+  document.getElementById("stat-ativos").textContent    = arr.filter(p=>p.etapa!=="entregue").length;
+  document.getElementById("stat-atrasados").textContent = arr.filter(p=>p.prazo&&p.etapa!=="entregue"&&diasRestantes(p.prazo)<0).length;
+  document.getElementById("stat-hoje").textContent      = arr.filter(p=>p.prazo&&diasRestantes(p.prazo)===0).length;
+}
+
+// ── Detalhe ────────────────────────────────────
+function abrirDetalhe(key) {
+  const p = { ...pedidos[key], _key:key };
+  pedidoAtual = p;
+  const etapa    = etapaObj(p.etapa);
+  const idxEtapa = ETAPAS.findIndex(e => e.id === p.etapa);
+  const dias     = diasRestantes(p.prazo);
+  const atrasado = dias !== null && dias < 0 && p.etapa !== "entregue";
+
+  document.getElementById("det-id").textContent   = p.id || "";
+  document.getElementById("det-nome").textContent = p.cliente || "—";
+
+  // Barras de progresso
+  document.getElementById("prog-barras").innerHTML = ETAPAS.map((e,i) =>
+    `<div class="prog-bar" style="background:${i<=idxEtapa?e.cor:"#E7E5E4"}"></div>`
+  ).join("");
+
+  document.getElementById("prog-etapa").innerHTML =
+    `<span style="color:${etapa.cor}">${etapa.icon} ${etapa.label}</span>`;
+
+  const prazoEl = document.getElementById("prog-prazo");
+  if (dias !== null) {
+    prazoEl.textContent = atrasado ? `${Math.abs(dias)} dia(s) atrasado` :
+      dias === 0 ? "Entrega hoje!" : `${dias} dia(s) restante(s)`;
+    prazoEl.style.color = atrasado ? "#EF4444" : dias===0 ? "#F59E0B" : "#10B981";
+  } else { prazoEl.textContent = ""; }
+
+  // Info
+  const prio = { normal:"Normal", urgente:"Urgente", expresso:"Expresso" };
+  const priorCor = PRIO_CORES[p.prioridade] || "#6B7280";
+  const campos = [
+    ["Produto",     p.produto],
+    ["Quantidade",  p.quantidade],
+    ["Valor",       p.valor ? `R$ ${p.valor}` : null],
+    ["Prazo",       formatarData(p.prazo)],
+    ["Responsável", p.responsavel],
+    ["Prioridade",  `<span style="color:${priorCor};font-weight:700">${prio[p.prioridade]||"Normal"}</span>`],
+    ["Descrição",   p.descricao],
+    ["Criado em",   formatarData(p.criadoEm)],
+  ];
+  let infoHTML = campos.filter(([,v])=>v).map(([l,v])=>
+    `<div class="info-row"><span class="info-label">${l}</span><span class="info-val">${v}</span></div>`
+  ).join("");
+  if (p.whatsapp) {
+    const num = p.whatsapp.replace(/\D/g,"");
+    infoHTML += `<a class="btn-wpp" href="https://wa.me/55${num}" target="_blank">
+      📱 Abrir WhatsApp — ${p.whatsapp}</a>`;
+  }
+  document.getElementById("info-card").innerHTML = infoHTML;
+
+  // Botões avançar/voltar
+  const btnV = document.getElementById("btn-voltar-et");
+  const btnA = document.getElementById("btn-avancar");
+  btnV.disabled = idxEtapa === 0;
+  btnV.style.color = idxEtapa === 0 ? "#D6D3D1" : "#57534E";
+  btnA.disabled = idxEtapa === ETAPAS.length - 1;
+  btnA.style.background = idxEtapa === ETAPAS.length-1 ? "#E7E5E4" : etapa.cor;
+  btnA.style.color      = idxEtapa === ETAPAS.length-1 ? "#A8A29E" : "#fff";
+
+  // Histórico
+  const hist = p.historico || [];
+  const histCard = document.getElementById("historico-card");
+  if (hist.length) {
+    histCard.classList.remove("hidden");
+    document.getElementById("historico-lista").innerHTML = hist.map(h =>
+      `<div class="hist-item">
+        <div class="hist-dot"></div>
+        <div>
+          <div class="hist-texto">${etapaObj(h.de).label} → ${etapaObj(h.para).label}</div>
+          <div class="hist-data">${new Date(h.em).toLocaleString("pt-BR")}</div>
+        </div>
+      </div>`
+    ).join("");
+  } else { histCard.classList.add("hidden"); }
+
+  mostrarTela("tela-detalhe");
+}
+
+// ── Avançar / Voltar etapa ─────────────────────
+async function avancarEtapa() {
+  const p       = pedidoAtual;
+  const idx     = ETAPAS.findIndex(e => e.id === p.etapa);
+  if (idx >= ETAPAS.length-1) return;
+  const nova    = ETAPAS[idx+1].id;
+  const hist    = [...(p.historico||[]), { de:p.etapa, para:nova, em:new Date().toISOString() }];
+  await window._update(window._ref(window._db, `pedidos/${p._key}`), { etapa:nova, historico:hist });
+  toast(`Movido para ${ETAPAS[idx+1].label} ✅`);
+  pedidoAtual = { ...p, etapa:nova, historico:hist };
+  abrirDetalhe(p._key);
+}
+async function voltarEtapa() {
+  const p   = pedidoAtual;
+  const idx = ETAPAS.findIndex(e => e.id === p.etapa);
+  if (idx <= 0) return;
+  const nova = ETAPAS[idx-1].id;
+  await window._update(window._ref(window._db, `pedidos/${p._key}`), { etapa:nova });
+  toast(`Voltou para ${ETAPAS[idx-1].label}`);
+  pedidoAtual = { ...p, etapa:nova };
+  abrirDetalhe(p._key);
+}
+async function excluirPedido() {
+  if (!confirm("Excluir este pedido?")) return;
+  await window._remove(window._ref(window._db, `pedidos/${pedidoAtual._key}`));
+  toast("Pedido excluído.");
+  voltar();
+}
+
+// ── Formulário ─────────────────────────────────
+function abrirNovo() {
+  editandoId = null;
+  document.getElementById("form-titulo").textContent = "Novo Pedido";
+  document.getElementById("btn-salvar").textContent  = "Criar Pedido";
+  ["f-cliente","f-whatsapp","f-descricao","f-quantidade","f-valor","f-prazo"]
+    .forEach(id => document.getElementById(id).value = "");
+  document.getElementById("f-produto").value    = "";
+  document.getElementById("f-responsavel").value = "";
+  document.getElementById("campo-etapa").classList.add("hidden");
+  setPrio("normal");
+  mostrarTela("tela-form");
+}
+
+function abrirEdicao() {
+  const p = pedidoAtual;
+  editandoId = p._key;
+  document.getElementById("form-titulo").textContent = "Editar Pedido";
+  document.getElementById("btn-salvar").textContent  = "Salvar Alterações";
+  document.getElementById("f-cliente").value    = p.cliente    || "";
+  document.getElementById("f-whatsapp").value   = p.whatsapp   || "";
+  document.getElementById("f-produto").value    = p.produto    || "";
+  document.getElementById("f-descricao").value  = p.descricao  || "";
+  document.getElementById("f-quantidade").value = p.quantidade || "";
+  document.getElementById("f-valor").value      = p.valor      || "";
+  document.getElementById("f-prazo").value      = p.prazo      || "";
+  document.getElementById("f-responsavel").value= p.responsavel|| "";
+  setPrio(p.prioridade || "normal");
+
+  // Preencher select de etapas
+  const sel = document.getElementById("f-etapa");
+  sel.innerHTML = ETAPAS.map(e =>
+    `<option value="${e.id}"${e.id===p.etapa?" selected":""}>${e.icon} ${e.label}</option>`
+  ).join("");
+  document.getElementById("campo-etapa").classList.remove("hidden");
+  mostrarTela("tela-form");
+}
+
+function setPrio(id) {
+  prioAtual = id;
+  document.querySelectorAll(".prio-btn").forEach(b => {
+    const isAtivo = b.dataset.prio === id;
+    const cor = PRIO_CORES[b.dataset.prio];
+    b.classList.toggle("ativo", isAtivo);
+    b.style.background  = isAtivo ? cor : "#fff";
+    b.style.color       = isAtivo ? "#fff" : "#78716C";
+    b.style.borderColor = isAtivo ? cor : "#E7E5E4";
+  });
+}
+
+async function salvarPedido() {
+  const cliente = document.getElementById("f-cliente").value.trim();
+  const produto = document.getElementById("f-produto").value;
+  if (!cliente || !produto) { toast("⚠️ Preencha cliente e produto."); return; }
+
+  const btn = document.getElementById("btn-salvar");
+  btn.disabled = true; btn.textContent = "Salvando...";
+
+  const dados = {
+    cliente,
+    whatsapp:   document.getElementById("f-whatsapp").value.trim(),
+    produto,
+    descricao:  document.getElementById("f-descricao").value.trim(),
+    quantidade: document.getElementById("f-quantidade").value.trim(),
+    valor:      document.getElementById("f-valor").value.trim(),
+    prazo:      document.getElementById("f-prazo").value,
+    responsavel:document.getElementById("f-responsavel").value,
+    prioridade: prioAtual,
+  };
+
+  if (editandoId) {
+    const etapa = document.getElementById("f-etapa").value;
+    await window._update(window._ref(window._db, `pedidos/${editandoId}`), { ...dados, etapa });
+    toast("Pedido atualizado! ✅");
+    pedidoAtual = { ...pedidoAtual, ...dados, etapa };
+    abrirDetalhe(editandoId);
+  } else {
+    dados.id       = gerarId();
+    dados.etapa    = "orcamento";
+    dados.criadoEm = new Date().toISOString();
+    dados.historico= [];
+    await window._push(window._ref(window._db, "pedidos"), dados);
+    toast("Pedido criado! ✅");
+    voltar();
+  }
+
+  btn.disabled = false;
+  btn.textContent = editandoId ? "Salvar Alterações" : "Criar Pedido";
+  editandoId = null;
+}
+
+// ── Init ───────────────────────────────────────
+mostrarTela("tela-lista");
+
+// Se Firebase não carregar em 3s, mostrar config
+setTimeout(() => {
+  if (!firebaseOk) mostrarConfig();
+}, 3000);
+</script>
+</body>
+</html>
