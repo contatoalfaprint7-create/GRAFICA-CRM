@@ -1,4 +1,4 @@
-﻿jsimport { initializeApp } from "firebase/app";
+﻿simport { initializeApp } from "firebase/app";
 import { getDatabase } from "firebase/database";
 
 const firebaseConfig = {
